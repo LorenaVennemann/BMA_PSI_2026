@@ -11,6 +11,9 @@ const ALIGN_DIR = '/home/pi/visual0/tepxCheckHDI';
 fs.mkdirSync(PHOTO_DIR, { recursive: true });
 fs.mkdirSync(ANALYSIS_DIR, { recursive: true });
 
+const multer = require('multer');
+const upload = multer({ dest: PHOTO_DIR, limits: { fileSize: 50 * 1024 * 1024 } });
+
 const led = spawn('/usr/bin/python3', [path.join(__dirname, 'led.py')]);
 led.stderr.on('data', d => console.error('LED:', d.toString()));
 let ledState = 'off';
@@ -51,7 +54,12 @@ app.post('/api/photo', (req, res) => {
 
   execFile('rpicam-still', args, err => {
     if (err) return res.status(500).json({ error: err.message });
-    res.json({ url: `/photos/${name}` });
+    execFile(path.join(ALIGN_DIR, '.venv', 'bin', 'python3'),
+      [path.join(__dirname, 'sharpness.py'), filePath],
+      (e, stdout) => {
+        const sharp = e ? null : parseInt(stdout.trim());
+        res.json({ url: `/photos/${name}`, sharpness: sharp });
+      });
   });
 });
 
@@ -72,6 +80,45 @@ app.post('/api/analyze', (req, res) => {
     let data;
     try { data = JSON.parse(stdout)[0]; } catch (e) { return res.status(500).json({ error: 'bad output: ' + stdout }); }
     const stem = path.basename(latest, path.extname(latest));
+    res.json({ result: data, overlay: `/analysis/${stem}_overlay.jpg` });
+  });
+});
+
+app.post('/api/corner', (req, res) => {
+  const files = fs.readdirSync(PHOTO_DIR)
+    .filter(f => f.endsWith('.jpg'))
+    .map(f => ({ f, t: fs.statSync(path.join(PHOTO_DIR, f)).mtimeMs }))
+    .sort((a, b) => b.t - a.t);
+  if (files.length === 0) return res.status(400).json({ error: 'no photo found yet' });
+
+  const latest = path.join(PHOTO_DIR, files[0].f);
+  const overlayName = `corner_${Date.now()}.jpg`;
+  const overlayPath = path.join(ANALYSIS_DIR, overlayName);
+
+  execFile(path.join(ALIGN_DIR, '.venv', 'bin', 'python3'), [
+    'corner_check.py', latest, '--out', overlayPath, '--json'
+  ], { cwd: ALIGN_DIR }, (err, stdout, stderr) => {
+    if (err) return res.status(500).json({ error: stderr || err.message });
+    let data;
+    try { data = JSON.parse(stdout); } catch (e) { return res.status(500).json({ error: 'bad output: ' + stdout }); }
+    res.json({ result: data, overlay: `/analysis/${overlayName}` });
+  });
+});
+
+app.post('/api/upload', upload.single('file'), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'kein File' });
+  const dest = path.join(PHOTO_DIR, `upload_${Date.now()}.jpg`);
+  fs.renameSync(req.file.path, dest);
+
+  execFile(path.join(ALIGN_DIR, '.venv', 'bin', 'python3'), [
+    'check_alignment.py', dest,
+    '--out', ANALYSIS_DIR,
+    '--quiet', '--json', '--no-log'
+  ], { cwd: ALIGN_DIR }, (err, stdout, stderr) => {
+    if (err) return res.status(500).json({ error: stderr || err.message });
+    let data;
+    try { data = JSON.parse(stdout)[0]; } catch (e) { return res.status(500).json({ error: 'bad output: ' + stdout }); }
+    const stem = path.basename(dest, path.extname(dest));
     res.json({ result: data, overlay: `/analysis/${stem}_overlay.jpg` });
   });
 });
