@@ -78,6 +78,48 @@ app.post('/api/analyze', (req, res) => {
   });
 });
 
+let streamProc = null;
+
+app.get('/stream', (req, res) => {
+  res.writeHead(200, {
+    'Content-Type': 'multipart/x-mixed-replace; boundary=frame',
+    'Cache-Control': 'no-cache',
+    'Connection': 'close'
+  });
+
+  const cam = spawn('rpicam-vid', [
+    '-t', '0',
+    '--codec', 'mjpeg',
+    '--width', '1280',
+    '--height', '720',
+    '--framerate', '15',
+    '--awbgains', '2.8,1.2',
+    '--nopreview',
+    '-o', '-'
+  ]);
+  streamProc = cam;
+
+  let buffer = Buffer.alloc(0);
+  cam.stdout.on('data', chunk => {
+    buffer = Buffer.concat([buffer, chunk]);
+    let start = buffer.indexOf(Buffer.from([0xFF, 0xD8]));
+    let end = buffer.indexOf(Buffer.from([0xFF, 0xD9]));
+    while (start !== -1 && end !== -1 && end > start) {
+      const frame = buffer.slice(start, end + 2);
+      res.write(`--frame\r\nContent-Type: image/jpeg\r\nContent-Length: ${frame.length}\r\n\r\n`);
+      res.write(frame);
+      res.write('\r\n');
+      buffer = buffer.slice(end + 2);
+      start = buffer.indexOf(Buffer.from([0xFF, 0xD8]));
+      end = buffer.indexOf(Buffer.from([0xFF, 0xD9]));
+    }
+  });
+
+  req.on('close', () => {
+    cam.kill('SIGTERM');
+    streamProc = null;
+  });
+});
 process.on('SIGINT', () => {
   led.stdin.write('off\n');
   setTimeout(() => process.exit(), 300);
