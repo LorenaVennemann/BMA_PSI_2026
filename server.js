@@ -38,7 +38,7 @@ app.post('/api/photo', (req, res) => {
   const { shutter = '', gain = '', ev = '0' } = req.body || {};
   const name = `foto_${Date.now()}.raw`;
   const filePath = path.join(PHOTO_DIR, name);
-  const args = ['-o', filePath, '-t', '1000', '--nopreview', '--ev', String(ev), '--raw'];
+  const args = ['-o', filePath, '-t', '1000', '--nopreview', '--ev', String(ev), '--raw', '--hflip', '--awbgains', '2.8,1.2'];
   if (shutter) args.push('--shutter', String(shutter));
   if (gain) args.push('--gain', String(gain));
 
