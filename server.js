@@ -32,11 +32,18 @@ app.post('/api/led/off', (req, res) => {
   res.json({ led: ledState });
 });
 
+app.post('/api/led/bright', (req, res) => {
+  const { value = 150 } = req.body || {};
+  const v = Math.max(0, Math.min(255, parseInt(value)));
+  led.stdin.write(`bright ${v}\n`);
+  res.json({ brightness: v });
+});
+
 app.get('/api/led', (req, res) => res.json({ led: ledState }));
 
 app.post('/api/photo', (req, res) => {
   const { shutter = '', gain = '', ev = '0' } = req.body || {};
-  const name = `foto_${Date.now()}.raw`;
+  const name = `foto_${Date.now()}.jpg`;
   const filePath = path.join(PHOTO_DIR, name);
   const args = ['-o', filePath, '-t', '1000', '--nopreview', '--ev', String(ev), '--raw', '--hflip', '--awbgains', '2.8,1.2'];
   if (shutter) args.push('--shutter', String(shutter));
@@ -44,22 +51,13 @@ app.post('/api/photo', (req, res) => {
 
   execFile('rpicam-still', args, err => {
     if (err) return res.status(500).json({ error: err.message });
-
-    const calibFile = path.join(__dirname, 'calibration.npz');
-    if (fs.existsSync(calibFile)) {
-      execFile('python3', [path.join(__dirname, 'undistort.py'), filePath, filePath], err2 => {
-        if (err2) console.error('Undistort:', err2.message);
-        res.json({ url: `/photos/${name}` });
-      });
-    } else {
-      res.json({ url: `/photos/${name}` });
-    }
+    res.json({ url: `/photos/${name}` });
   });
 });
 
 app.post('/api/analyze', (req, res) => {
   const files = fs.readdirSync(PHOTO_DIR)
-    .filter(f => f.endsWith('.raw'))
+    .filter(f => f.endsWith('.jpg'))
     .map(f => ({ f, t: fs.statSync(path.join(PHOTO_DIR, f)).mtimeMs }))
     .sort((a, b) => b.t - a.t);
   if (files.length === 0) return res.status(400).json({ error: 'no photo found yet' });
@@ -120,6 +118,7 @@ app.get('/stream', (req, res) => {
     streamProc = null;
   });
 });
+
 process.on('SIGINT', () => {
   led.stdin.write('off\n');
   setTimeout(() => process.exit(), 300);

@@ -23,6 +23,9 @@
   <button class="on" onclick="ledOn()">LED on</button>
   <button class="off" onclick="ledOff()">LED off</button>
   <br>
+<br>
+<label>LED-Brightness: <input type="range" id="bright" min="0" max="255" value="150" oninput="setBright(this.value)"></label>
+<span id="brightval">150</span>
 <div style="text-align:left; max-width:300px; margin:1rem auto;">
   <label>Shutter (µs): <input type="number" id="shutter" value="8000"></label><br>
   <label>Gain: <input type="number" id="gain" step="0.1" value="1.5"></label><br>
@@ -57,21 +60,21 @@
       const res = await fetch('/api/led/off', { method: 'POST' });
       status.textContent = (await res.json()).led;
     }
-async function takePhoto() {
-  msg.textContent = 'Taking photo...';
-  const shutter = document.getElementById('shutter').value;
-  const gain = document.getElementById('gain').value;
-  const ev = document.getElementById('ev').value;
-  const res = await fetch('/api/photo', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ shutter, gain, ev })
-  });
-  const data = await res.json();
-  if (data.error) { msg.textContent = 'Error: ' + data.error; return; }
-  document.getElementById('img').src = data.url;
-  const rawUrl = data.url.replace('.jpg', '.dng');
-  msg.innerHTML = `<a href="${rawUrl}" download>Download RAW (.dng)</a>`;
-}
+ async function takePhoto() {
+   msg.textContent = 'Taking photo...';
+   const shutter = document.getElementById('shutter').value;
+   const gain = document.getElementById('gain').value;
+   const ev = document.getElementById('ev').value;
+   const res = await fetch('/api/photo', {
+     method: 'POST', headers: { 'Content-Type': 'application/json' },
+     body: JSON.stringify({ shutter, gain, ev })
+   });
+   const data = await res.json();
+   if (data.error) { msg.textContent = 'Error: ' + data.error; return; }
+   document.getElementById('img').src = data.url;
+   const rawUrl = data.url.replace('.jpg', '.dng');
+   msg.innerHTML = `<a href="${rawUrl}" download>Download RAW (.dng)</a>`;
+ }
 
     async function analyze() {
       document.getElementById('result').textContent = 'Analyzing...';
@@ -81,6 +84,13 @@ async function takePhoto() {
       document.getElementById('result').textContent = JSON.stringify(data.result, null, 2);
       document.getElementById('overlay').src = data.overlay + '?t=' + Date.now();
     }
+  async function setBright(v) {
+   document.getElementById('brightval').textContent = v;
+   await fetch('/api/led/bright', {
+     method: 'POST', headers: { 'Content-Type': 'application/json' },
+     body: JSON.stringify({ value: v })
+   });
+ }
 
     fetch('/api/led').then(r => r.json()).then(d => status.textContent = d.led);
  let streaming = false;
@@ -96,6 +106,7 @@ async function takePhoto() {
      streaming = false;
    }
  }
+
   </script>
 </body>
 </html>
